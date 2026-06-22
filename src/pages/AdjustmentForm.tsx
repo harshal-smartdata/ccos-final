@@ -241,7 +241,7 @@ const AdjustmentForm = () => {
              <div className="bg-card rounded-xl border overflow-hidden shadow-sm">
                <table className="data-table">
                  <thead>
-                   <tr><th>Invoice Number</th><th>Vendor</th><th>Date</th><th>Total Items</th><th className="text-right">Action</th></tr>
+                   <tr><th>Invoice Number</th><th>Vendor</th><th>Date</th><th>Total Items</th><th className="!text-center">Action</th></tr>
                  </thead>
                  <tbody>
                    {form.invoices.map(inv => (
@@ -250,7 +250,7 @@ const AdjustmentForm = () => {
                        <td>{inv.vendor}</td>
                        <td className="text-muted-foreground text-sm">{inv.date}</td>
                        <td>{inv.commodities.length} Commodities</td>
-                       <td className="text-right">
+                       <td className="text-center">
                          <Button variant="outline" size="sm" onClick={nextStep}>Edit Commodities</Button>
                        </td>
                      </tr>

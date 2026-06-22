@@ -2,6 +2,25 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Upload, FileText, CheckCircle2, AlertCircle, X, Download } from "lucide-react";
 
+const escapeCsv = (value: string) => {
+  const v = value ?? "";
+  return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+};
+
+/** Build and download a CSV template (header + sample rows) for the given entity. */
+export const downloadCsvTemplate = (entityName: string, columns: string[], rows: string[][]) => {
+  const lines = [columns, ...rows].map((row) => row.map(escapeCsv).join(","));
+  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${entityName.toLowerCase().replace(/\s+/g, "_")}_template.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
 interface BulkUploadPanelProps {
   entityName: string;
   templateColumns: string[];
@@ -31,6 +50,8 @@ const BulkUploadPanel = ({ entityName, templateColumns, sampleRows, onBack }: Bu
     setTimeout(() => setStep("done"), 1500);
   };
 
+  const downloadTemplate = () => downloadCsvTemplate(entityName, templateColumns, sampleRows);
+
   return (
     <div className="space-y-6">
       {step === "upload" && (
@@ -41,7 +62,7 @@ const BulkUploadPanel = ({ entityName, templateColumns, sampleRows, onBack }: Bu
               <p className="text-sm font-medium text-foreground">Download CSV Template</p>
               <p className="text-xs text-muted-foreground mt-0.5">Use this template to format your {entityName.toLowerCase()} data correctly.</p>
             </div>
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={downloadTemplate}>
               <Download className="h-4 w-4 mr-1" /> Template
             </Button>
           </div>

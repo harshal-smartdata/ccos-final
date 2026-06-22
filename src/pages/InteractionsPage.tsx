@@ -57,7 +57,7 @@ export default function InteractionsPage() {
                 <th className="px-5 py-3 font-medium">Related Transaction</th>
                 <th className="px-5 py-3 font-medium">Notes</th>
                 <th className="px-5 py-3 font-medium">Consultant</th>
-                <th className="px-5 py-3 font-medium text-right">Actions</th>
+                <th className="px-5 py-3 font-medium !text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y border-t border-border">
@@ -76,7 +76,7 @@ export default function InteractionsPage() {
                   </td>
                   <td className="px-5 py-3 max-w-sm truncate" title={item.notes}>{item.notes}</td>
                   <td className="px-5 py-3 whitespace-nowrap">{item.consultant}</td>
-                  <td className="px-5 py-3 text-right">
+                  <td className="px-5 py-3 text-center">
                     <button onClick={() => navigate(`/interactions/${item.id}/edit`)} className="text-primary hover:underline font-medium text-xs">Edit</button>
                   </td>
                 </tr>

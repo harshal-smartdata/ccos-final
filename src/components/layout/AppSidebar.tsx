@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 
 import { navItems, type NavItem } from "@/config/navigation";
+import ccosLogo from "@/assets/CCOS_Logo.png";
 
 export const AppSidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
@@ -49,8 +50,8 @@ export const AppSidebar = () => {
           collapsed ? "w-8 h-8 mx-auto" : "w-full space-x-2"
         )}>
           <img
-            // src="/logo.png"
-            alt="Logo"
+            src={ccosLogo}
+            alt="CCOS Logo"
             className={cn(
               "object-contain transition-all duration-200",
               collapsed ? "w-8 h-8" : "h-10 w-auto max-w-[200px]"

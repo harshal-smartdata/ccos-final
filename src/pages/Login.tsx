@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useRole, type UserRole } from "@/contexts/RoleContext";
 import { Lock, Mail, ChevronRight } from "lucide-react";
+import ccosLogo from "@/assets/CCOS_Logo.png";
 
 export default function Login() {
   const { setRole, setIsAuthenticated } = useRole();
@@ -64,7 +65,7 @@ export default function Login() {
         <div className="bg-card border rounded-2xl p-8 shadow-sm">
           <div className="text-center mb-8">
             <div className="mb-6">
-              <img src="/logo.png" alt="Dominion Logo" className="h-24 w-auto mx-auto object-contain" />
+              <img src={ccosLogo} alt="CCOS Logo" className="h-24 w-auto mx-auto object-contain" />
             </div>
             {step === "otp" && (
               <p className="text-muted-foreground mb-4">
