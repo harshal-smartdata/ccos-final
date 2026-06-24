@@ -47,7 +47,7 @@ export const AppSidebar = () => {
       <div className="flex items-center h-14 px-4 border-b border-sidebar-border overflow-hidden">
         <div className={cn(
           "flex items-center shrink-0 transition-all duration-200",
-          collapsed ? "w-8 h-8 mx-auto" : "w-full space-x-2"
+          collapsed ? "w-8 h-8 mx-auto" : "w-full justify-center space-x-2"
         )}>
           <img
             src={ccosLogo}

@@ -9,6 +9,8 @@ import Login from "./pages/Login.tsx";
 import AdminPage from "./pages/AdminPage.tsx";
 import UserManagementPage from "./pages/UserManagementPage.tsx";
 import ClientProfilesPage from "./pages/ClientProfilesPage.tsx";
+import AgreementsPage from "./pages/AgreementsPage.tsx";
+import OnboardingPage from "./pages/OnboardingPage.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import { CommandPalette } from "@/components/shared/CommandPalette";
 
@@ -40,6 +42,8 @@ const MainApp = () => {
         <Route path="/" element={<Navigate to="/client-profiles" replace />} />
 
         <Route path="/client-profiles" element={<ProtectedRoute allowedRoles={["admin", "manager", "consultant"]}><ClientProfilesPage /></ProtectedRoute>} />
+        <Route path="/agreements" element={<ProtectedRoute allowedRoles={["admin", "manager", "consultant"]}><AgreementsPage /></ProtectedRoute>} />
+        <Route path="/client-onboarding" element={<ProtectedRoute allowedRoles={["admin", "manager", "consultant"]}><OnboardingPage /></ProtectedRoute>} />
         <Route path="/user-management" element={<ProtectedRoute allowedRoles={["admin"]}><UserManagementPage /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute allowedRoles={["admin"]}><AdminPage /></ProtectedRoute>} />
 
@@ -52,6 +56,8 @@ const MainApp = () => {
 import { NavigationProvider } from "@/contexts/NavigationContext";
 import { UserManagementProvider } from "@/contexts/UserManagementContext";
 import { ClientProfileProvider } from "@/contexts/ClientProfileContext";
+import { AgreementProvider } from "@/contexts/AgreementContext";
+import { OnboardingProvider } from "@/contexts/OnboardingContext";
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -62,9 +68,13 @@ const App = () => (
         <NavigationProvider>
           <UserManagementProvider>
             <ClientProfileProvider>
-              <BrowserRouter>
-                <MainApp />
-              </BrowserRouter>
+              <AgreementProvider>
+                <OnboardingProvider>
+                  <BrowserRouter>
+                    <MainApp />
+                  </BrowserRouter>
+                </OnboardingProvider>
+              </AgreementProvider>
             </ClientProfileProvider>
           </UserManagementProvider>
         </NavigationProvider>
