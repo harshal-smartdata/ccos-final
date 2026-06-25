@@ -1,4 +1,11 @@
 import { useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Save, Pencil, Trash2, Plus, ArrowLeft, FolderOpen, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -8,16 +15,19 @@ import {
   useAgreements,
   emptyAgreement,
   emptySubProject,
+  emptyProjectMilestone,
   salesReps,
   workManagementReps,
+  SERVICE_TYPES,
   type Project,
   type ProjectInput,
+  type ProjectMilestone,
   type AgreementType,
 } from "@/contexts/AgreementContext";
 import { useClientProfiles } from "@/contexts/ClientProfileContext";
 import FieldSelect from "@/components/agreements/FieldSelect";
 import ChecklistEditor from "@/components/agreements/ChecklistEditor";
-import AuditTeamSelect from "@/components/agreements/AuditTeamSelect";
+import AuditorSelect from "@/components/agreements/AuditorSelect";
 import AgreementBillingEditor from "@/components/agreements/AgreementBillingEditor";
 import ProjectBillingSetupDialog from "@/components/agreements/ProjectBillingSetupDialog";
 
@@ -77,7 +87,7 @@ export default function AgreementsPage() {
     <div className="p-6">
       <PageHeader
         title="Agreements"
-        description="Manage client agreements and their service projects."
+        description="Manage client agreements and their projects."
         actions={
           <Button onClick={() => setMode({ kind: "form", editingId: null })}>
             <Plus className="h-4 w-4 mr-1" /> New Agreement
@@ -150,6 +160,10 @@ function AgreementForm({
   const set = <K extends keyof ProjectInput>(key: K, value: ProjectInput[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
 
+  // Projects staged during agreement creation/editing; persisted on save once the
+  // parent agreement id is known.
+  const [draftProjects, setDraftProjects] = useState<ProjectInput[]>([]);
+
   const valid = form.name.trim() !== "" && form.clientId !== "" && form.declarationAccepted;
 
   const save = () => {
@@ -157,13 +171,19 @@ function AgreementForm({
       toast({ title: "Client, agreement name and declaration are required", variant: "destructive" });
       return;
     }
+    let parentId: string;
     if (existing) {
       updateProject(existing.id, form);
-      toast({ title: "Agreement updated" });
+      parentId = existing.id;
     } else {
-      addProject(form);
-      toast({ title: "Agreement created" });
+      const created = addProject(form);
+      parentId = created.id;
     }
+    draftProjects.forEach((p) => addProject({ ...p, parentId, clientId: form.clientId }));
+    toast({
+      title: existing ? "Agreement updated" : "Agreement created",
+      description: draftProjects.length > 0 ? `${draftProjects.length} project(s) added` : undefined,
+    });
     onSaved();
   };
 
@@ -236,6 +256,11 @@ function AgreementForm({
           </section>
 
           <section className="border rounded-xl p-5">
+            <SectionHeading>Projects</SectionHeading>
+            <DraftProjectsEditor projects={draftProjects} onChange={setDraftProjects} />
+          </section>
+
+          <section className="border rounded-xl p-5">
             <SectionHeading>Notes / Instructions</SectionHeading>
             <textarea className={FIELD} rows={4} value={form.notes} onChange={(e) => set("notes", e.target.value)} />
           </section>
@@ -288,6 +313,257 @@ function AgreementForm({
   );
 }
 
+// ── Project milestone dates editor ─────────────────────────────────
+function ProjectMilestonesEditor({
+  milestones,
+  onChange,
+}: {
+  milestones: ProjectMilestone[];
+  onChange: (next: ProjectMilestone[]) => void;
+}) {
+  const update = (id: string, patch: Partial<ProjectMilestone>) =>
+    onChange(milestones.map((m) => (m.id === id ? { ...m, ...patch } : m)));
+
+  return (
+    <div className="space-y-2">
+      {milestones.map((m) => (
+        <div key={m.id} className="flex items-center gap-2">
+          <input
+            className={FIELD}
+            placeholder="Milestone label"
+            value={m.label}
+            onChange={(e) => update(m.id, { label: e.target.value })}
+          />
+          <input
+            type="date"
+            className={FIELD + " max-w-[180px]"}
+            value={m.date}
+            onChange={(e) => update(m.id, { date: e.target.value })}
+          />
+          <button
+            className="text-xs underline text-muted-foreground shrink-0"
+            onClick={() => onChange(milestones.filter((x) => x.id !== m.id))}
+          >
+            remove
+          </button>
+        </div>
+      ))}
+      <Button variant="outline" size="sm" onClick={() => onChange([...milestones, emptyProjectMilestone()])}>
+        <Plus className="h-4 w-4 mr-1" /> Add milestone
+      </Button>
+    </div>
+  );
+}
+
+// ── Shared project-profile fields (used by both project forms) ──────
+function ProjectFields({
+  form,
+  setForm,
+  numberPreview,
+}: {
+  form: ProjectInput;
+  setForm: React.Dispatch<React.SetStateAction<ProjectInput>>;
+  numberPreview: string;
+}) {
+  const set = <K extends keyof ProjectInput>(key: K, value: ProjectInput[K]) =>
+    setForm((f) => ({ ...f, [key]: value }));
+
+  const [auditorDialogOpen, setAuditorDialogOpen] = useState(false);
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Field label="Project Number">
+          <input className={FIELD + " bg-muted text-muted-foreground"} disabled value={numberPreview} />
+        </Field>
+        <Field label="Service Type *">
+          <FieldSelect
+            value={form.serviceType}
+            onChange={(v) => set("serviceType", v as ProjectInput["serviceType"])}
+            options={SERVICE_TYPES as unknown as string[]}
+          />
+        </Field>
+        <Field label="Project Name *">
+          <input className={FIELD} value={form.name} onChange={(e) => set("name", e.target.value)} />
+        </Field>
+        <Field label="Assign Auditor(s) *">
+          <button
+            type="button"
+            className={FIELD + " text-left flex items-center justify-between"}
+            onClick={() => setAuditorDialogOpen(true)}
+          >
+            <span className={form.assignedTo.length ? "" : "text-muted-foreground"}>
+              {form.assignedTo.length ? form.assignedTo.join(", ") : "Select auditors…"}
+            </span>
+            <Pencil className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          </button>
+          <Dialog open={auditorDialogOpen} onOpenChange={setAuditorDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Assign Auditor(s)</DialogTitle>
+              </DialogHeader>
+              <div className="py-2 max-h-[60vh] overflow-y-auto">
+                <AuditorSelect
+                  auditors={form.assignedTo}
+                  allocations={form.auditAllocations}
+                  onChange={(auditors, allocations) =>
+                    setForm((f) => ({ ...f, assignedTo: auditors, auditAllocations: allocations }))
+                  }
+                />
+              </div>
+              <DialogFooter>
+                <Button onClick={() => setAuditorDialogOpen(false)}>Done</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </Field>
+        <Field label="Assigned Date">
+          <input type="date" className={FIELD} value={form.assignedDate} onChange={(e) => set("assignedDate", e.target.value)} />
+        </Field>
+        <Field label="Priority *">
+          <FieldSelect
+            value={form.priority}
+            onChange={(v) => set("priority", v as ProjectInput["priority"])}
+            options={["High", "Medium", "Low"]}
+          />
+        </Field>
+        <Field label="Target Due Date *">
+          <input type="date" className={FIELD} value={form.dueDate} onChange={(e) => set("dueDate", e.target.value)} />
+        </Field>
+        <Field label="Exclusion Profile">
+          <input className={FIELD} value={form.exclusionProfile} onChange={(e) => set("exclusionProfile", e.target.value)} />
+        </Field>
+      </div>
+
+      <Field label="Milestone Dates">
+        <ProjectMilestonesEditor milestones={form.projectMilestones} onChange={(m) => set("projectMilestones", m)} />
+      </Field>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Field label="Notes">
+          <textarea className={FIELD} rows={3} value={form.notes} onChange={(e) => set("notes", e.target.value)} />
+        </Field>
+        <Field label="Client Notes">
+          <textarea className={FIELD} rows={3} value={form.clientNotes} onChange={(e) => set("clientNotes", e.target.value)} />
+        </Field>
+      </div>
+
+      <Field label="Copy of Agreement / Supporting Documents">
+        <input
+          type="file"
+          multiple
+          className="text-sm"
+          onChange={(e) =>
+            set("uploadedFiles", [
+              ...form.uploadedFiles,
+              ...Array.from(e.target.files ?? []).map((f) => f.name),
+            ])
+          }
+        />
+        {form.uploadedFiles.length > 0 && (
+          <ul className="mt-2 text-sm text-muted-foreground list-disc pl-5">
+            {form.uploadedFiles.map((name, i) => (
+              <li key={i} className="flex items-center gap-2">
+                {name}
+                <button
+                  className="text-xs underline"
+                  onClick={() => set("uploadedFiles", form.uploadedFiles.filter((_, j) => j !== i))}
+                >
+                  remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Field>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Field label="Project Checklist">
+          <ChecklistEditor items={form.checklist} onChange={(items) => set("checklist", items)} />
+        </Field>
+      </div>
+    </div>
+  );
+}
+
+// ── Draft projects editor (used while creating/editing an agreement) ─
+function DraftProjectsEditor({
+  projects,
+  onChange,
+}: {
+  projects: ProjectInput[];
+  onChange: (next: ProjectInput[]) => void;
+}) {
+  const [draft, setDraft] = useState<ProjectInput>(() => emptySubProject(""));
+  const [creating, setCreating] = useState(false);
+
+  const add = () => {
+    if (!draft.name.trim()) return;
+    onChange([...projects, draft]);
+    setDraft(emptySubProject(""));
+    setCreating(false);
+  };
+
+  const cancel = () => {
+    setDraft(emptySubProject(""));
+    setCreating(false);
+  };
+
+  return (
+    <div className="space-y-4">
+      {projects.length > 0 ? (
+        <div className="space-y-2">
+          {projects.map((p, i) => (
+            <div key={i} className="flex items-center justify-between border rounded-lg px-3 py-2">
+              <div>
+                <div className="text-sm font-medium">{p.name}</div>
+                <div className="text-xs text-muted-foreground">
+                  {p.serviceType} · {p.assignedTo.join(", ")} · {p.priority} · due {p.dueDate}
+                </div>
+              </div>
+              <button
+                className="text-xs underline text-muted-foreground"
+                onClick={() => onChange(projects.filter((_, j) => j !== i))}
+              >
+                remove
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        !creating && <p className="text-sm text-muted-foreground">No projects yet.</p>
+      )}
+
+      <Button variant="outline" size="sm" onClick={() => setCreating(true)}>
+        <Plus className="h-4 w-4 mr-1" /> Create Project
+      </Button>
+
+      <Dialog open={creating} onOpenChange={(o) => !o && cancel()}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Create Project</DialogTitle>
+          </DialogHeader>
+          <div className="py-2">
+            <ProjectFields form={draft} setForm={setDraft} numberPreview="Auto-generated on save" />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={cancel}>
+              Cancel
+            </Button>
+            <Button variant="secondary" size="sm" onClick={add} disabled={!draft.name.trim()}>
+              <Plus className="h-4 w-4 mr-1" /> Add Project
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <p className="text-xs text-muted-foreground">
+        Add as many projects as you need — each is created with its own project number when the agreement is saved.
+      </p>
+    </div>
+  );
+}
+
 // ── Agreement detail (sub-projects) ────────────────────────────────
 function AgreementDetail({ agreementId, onBack }: { agreementId: string; onBack: () => void }) {
   const { agreements, subProjectsOf, addProject, updateProject, deleteProject } = useAgreements();
@@ -333,11 +609,14 @@ function AgreementDetail({ agreementId, onBack }: { agreementId: string; onBack:
             setAdding(false);
             toast({ title: "Project added" });
           }}
+          onSavedAndContinue={() => {
+            toast({ title: "Project added — add another" });
+          }}
         />
       )}
 
       <h3 className="text-sm font-semibold mt-6 mb-2 flex items-center gap-1">
-        <FolderOpen className="h-4 w-4" /> Service Projects
+        <FolderOpen className="h-4 w-4" /> Projects
       </h3>
       {projects.length === 0 ? (
         <p className="text-sm text-muted-foreground">No projects yet.</p>
@@ -346,9 +625,11 @@ function AgreementDetail({ agreementId, onBack }: { agreementId: string; onBack:
           {projects.map((p) => (
             <div key={p.id} className="flex items-center justify-between border rounded-lg px-4 py-3">
               <div>
-                <div className="text-sm font-medium">{p.name}</div>
+                <div className="text-sm font-medium">
+                  {p.projectNumber ? `${p.projectNumber} · ` : ""}{p.name}
+                </div>
                 <div className="text-xs text-muted-foreground">
-                  {p.assignedTo} · {p.priority} · due {p.dueDate}
+                  {p.serviceType} · {p.assignedTo.join(", ")} · {p.priority} · due {p.dueDate}
                   {p.billingType ? ` · billing: ${p.billingType}` : ""}
                 </div>
               </div>
@@ -386,64 +667,46 @@ function SubProjectForm({
   agreementId,
   onCancel,
   onSaved,
+  onSavedAndContinue,
 }: {
   agreementId: string;
   onCancel: () => void;
   onSaved: () => void;
+  onSavedAndContinue: () => void;
 }) {
-  const { addProject } = useAgreements();
+  const { addProject, nextProjectNumber } = useAgreements();
   const { toast } = useToast();
   const [form, setForm] = useState<ProjectInput>(() => emptySubProject(agreementId));
 
-  const set = <K extends keyof ProjectInput>(key: K, value: ProjectInput[K]) =>
-    setForm((f) => ({ ...f, [key]: value }));
-
-  const save = () => {
+  const commit = (): boolean => {
     if (!form.name.trim()) {
       toast({ title: "Project name is required", variant: "destructive" });
-      return;
+      return false;
     }
     addProject(form);
-    onSaved();
+    return true;
+  };
+
+  const save = () => {
+    if (commit()) onSaved();
+  };
+
+  const saveAndAddAnother = () => {
+    if (commit()) {
+      setForm(emptySubProject(agreementId));
+      onSavedAndContinue();
+    }
   };
 
   return (
     <div className="border rounded-lg p-4 space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Field label="Service Project Name *">
-          <input className={FIELD} value={form.name} onChange={(e) => set("name", e.target.value)} />
-        </Field>
-        <Field label="Assigned To *">
-          <FieldSelect value={form.assignedTo} onChange={(v) => set("assignedTo", v)} options={workManagementReps} />
-        </Field>
-        <Field label="Priority *">
-          <FieldSelect
-            value={form.priority}
-            onChange={(v) => set("priority", v as ProjectInput["priority"])}
-            options={["High", "Medium", "Low"]}
-          />
-        </Field>
-        <Field label="Target Due Date *">
-          <input type="date" className={FIELD} value={form.dueDate} onChange={(e) => set("dueDate", e.target.value)} />
-        </Field>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Field label="Project Checklist">
-          <ChecklistEditor items={form.checklist} onChange={(items) => set("checklist", items)} />
-        </Field>
-
-        <Field label="Audit Team">
-          <AuditTeamSelect
-            team={form.auditTeam}
-            allocations={form.auditAllocations}
-            onChange={(team, allocations) => setForm((f) => ({ ...f, auditTeam: team, auditAllocations: allocations }))}
-          />
-        </Field>
-      </div>
+      <ProjectFields form={form} setForm={setForm} numberPreview={nextProjectNumber()} />
 
       <div className="flex justify-end gap-2">
         <Button variant="outline" onClick={onCancel}>Cancel</Button>
+        <Button variant="secondary" onClick={saveAndAddAnother} disabled={!form.name.trim()}>
+          <Plus className="h-4 w-4 mr-1" /> Save & Add Another
+        </Button>
         <Button onClick={save} disabled={!form.name.trim()}>
           <Save className="h-4 w-4 mr-1" /> Save Project
         </Button>

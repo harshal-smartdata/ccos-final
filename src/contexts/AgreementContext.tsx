@@ -4,6 +4,16 @@ import React, { createContext, useContext, useState, useEffect } from "react";
 export const salesReps = ["Sarah Chen", "James Wilson", "Lisa Park", "Michael Torres"];
 export const workManagementReps = ["James Wilson", "Lisa Park", "Sarah Chen", "Priya Nair"];
 
+// ── Project service types ──────────────────────────────────────────
+export const SERVICE_TYPES = [
+  "Duty Recovery",
+  "Compliance Services",
+  "CCOS License",
+  "Advisory",
+  "Other",
+] as const;
+export type ServiceType = (typeof SERVICE_TYPES)[number];
+
 // ── Supporting types ───────────────────────────────────────────────
 export interface ChecklistItem {
   id: string;
@@ -50,6 +60,13 @@ export interface Milestone {
   label: string;
   valueType: "Percent" | "Amount";
   value: number;
+}
+
+// A dated project milestone (distinct from billing milestones above).
+export interface ProjectMilestone {
+  id: string;
+  label: string;
+  date: string;
 }
 
 // One billing model. Fields are shared + per-kind (optional).
@@ -109,12 +126,17 @@ export interface Project {
   declarationAccepted: boolean;
 
   // Project (§2) fields
-  assignedTo: string;
+  projectNumber: string; // system-generated, e.g. PR-0001
+  serviceType: ServiceType;
+  assignedTo: string[]; // one or more assigned auditors
+  assignedDate: string;
   priority: "High" | "Medium" | "Low";
   dueDate: string;
+  projectMilestones: ProjectMilestone[];
+  clientNotes: string;
+  exclusionProfile: string;
   checklist: ChecklistItem[];
-  auditTeam: string[];
-  auditAllocations: Record<string, AuditAllocation>;
+  auditAllocations: Record<string, AuditAllocation>; // per-auditor rate/hours, keyed by assignedTo
 
   // Hidden/legacy per-project billing (set later via ProjectBillingSetupDialog)
   billingType?: string;
@@ -141,6 +163,25 @@ const addDays = (days: number) => {
 
 export const emptyChecklistItem = (): ChecklistItem => ({ id: genId(), text: "", done: false });
 
+export const emptyProjectMilestone = (): ProjectMilestone => ({ id: genId(), label: "", date: today() });
+
+// Pure sequence generators — compute the next number from a given project list.
+const computeNextAgreementNumber = (list: Project[]) => {
+  const nums = list
+    .filter((p) => p.isAgreement && /^AG-\d+$/.test(p.agreementNumber))
+    .map((p) => parseInt(p.agreementNumber.slice(3), 10));
+  const next = (nums.length ? Math.max(...nums) : 0) + 1;
+  return `AG-${String(next).padStart(4, "0")}`;
+};
+
+const computeNextProjectNumber = (list: Project[]) => {
+  const nums = list
+    .filter((p) => !p.isAgreement && /^PR-\d+$/.test(p.projectNumber))
+    .map((p) => parseInt(p.projectNumber.slice(3), 10));
+  const next = (nums.length ? Math.max(...nums) : 0) + 1;
+  return `PR-${String(next).padStart(4, "0")}`;
+};
+
 export const emptyAgreement = (): ProjectInput => ({
   isAgreement: true,
   parentId: null,
@@ -159,11 +200,16 @@ export const emptyAgreement = (): ProjectInput => ({
   uploadedFiles: [],
   declarationAccepted: false,
   // project fields unused on an agreement, but keep shape consistent
-  assignedTo: workManagementReps[0],
+  projectNumber: "",
+  serviceType: SERVICE_TYPES[0],
+  assignedTo: [workManagementReps[0]],
+  assignedDate: today(),
   priority: "Medium",
   dueDate: addDays(30),
+  projectMilestones: [],
+  clientNotes: "",
+  exclusionProfile: "",
   checklist: [],
-  auditTeam: [],
   auditAllocations: {},
 });
 
@@ -173,11 +219,10 @@ export const emptySubProject = (parentId: string): ProjectInput => ({
   parentId,
   agreementNumber: "",
   name: "",
-  assignedTo: workManagementReps[0],
+  assignedTo: [workManagementReps[0]],
   priority: "Medium",
   dueDate: addDays(30),
   checklist: [],
-  auditTeam: [],
   auditAllocations: {},
 });
 
@@ -215,6 +260,7 @@ interface AgreementContextType {
   updateProject: (id: string, input: ProjectInput) => void;
   deleteProject: (id: string) => void;
   nextAgreementNumber: () => string;
+  nextProjectNumber: () => string;
 }
 
 const AgreementContext = createContext<AgreementContextType | undefined>(undefined);
@@ -239,19 +285,21 @@ export const AgreementProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
   }, [projects]);
 
-  const nextAgreementNumber = () => {
-    const nums = projects
-      .filter((p) => p.isAgreement && /^AG-\d+$/.test(p.agreementNumber))
-      .map((p) => parseInt(p.agreementNumber.slice(3), 10));
-    const next = (nums.length ? Math.max(...nums) : 0) + 1;
-    return `AG-${String(next).padStart(4, "0")}`;
-  };
+  const nextAgreementNumber = () => computeNextAgreementNumber(projects);
+  const nextProjectNumber = () => computeNextProjectNumber(projects);
 
   const addProject: AgreementContextType["addProject"] = (input) => {
-    const agreementNumber =
-      input.isAgreement && !input.agreementNumber ? nextAgreementNumber() : input.agreementNumber;
-    const created: Project = { ...input, agreementNumber, id: genId() };
-    setProjects((p) => [...p, created]);
+    const id = genId();
+    let created: Project = { ...input, id };
+    // Compute numbers off the freshest list so batch adds get sequential numbers.
+    setProjects((prev) => {
+      const agreementNumber =
+        input.isAgreement && !input.agreementNumber ? computeNextAgreementNumber(prev) : input.agreementNumber;
+      const projectNumber =
+        !input.isAgreement && !input.projectNumber ? computeNextProjectNumber(prev) : input.projectNumber;
+      created = { ...input, agreementNumber, projectNumber, id };
+      return [...prev, created];
+    });
     return created;
   };
 
@@ -277,6 +325,7 @@ export const AgreementProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         updateProject,
         deleteProject,
         nextAgreementNumber,
+        nextProjectNumber,
       }}
     >
       {children}
